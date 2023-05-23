@@ -23,7 +23,7 @@ import (
 
 func TestRegexMatch(t *testing.T) {
 	ctx := context.Background()
-	regex := CreateRegex()
+	regex := CreateRegex(512 * 1024)
 	require.NoError(t, regex.SetRegexString(ctx, `abc+.*this st`, RegexFlags_None))
 	err := regex.SetMatchString(ctx, "Find the abc in this string")
 	require.NoError(t, err)
@@ -37,16 +37,14 @@ func TestRegexMatch(t *testing.T) {
 	require.False(t, ok)
 	require.NoError(t, regex.Close())
 
-	regex = CreateRegex()
+	regex = CreateRegex(11)
 	require.NoError(t, regex.SetRegexString(ctx, `[a-zA-Z0-9]{5} \w{4} aab`, RegexFlags_None))
 	err = regex.SetMatchString(ctx, "Words like aab don't exist")
 	require.NoError(t, err)
 	ok, err = regex.Matches(ctx, 0, 0)
 	require.NoError(t, err)
 	require.True(t, ok)
-	require.NoError(t, regex.Close())
 
-	regex = CreateRegex()
 	require.NoError(t, regex.SetRegexString(ctx, `^[aA]bcd[eE]$`, RegexFlags_None))
 	err = regex.SetMatchString(ctx, "abcde")
 	require.NoError(t, err)
@@ -64,11 +62,27 @@ func TestRegexMatch(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok)
 	require.NoError(t, regex.Close())
+
+	// 4GB buffer is too big, so it should just disable it and not error. Shouldn't affect anything else though.
+	regex = CreateRegex(0xFFFFFFFF)
+	require.Equal(t, uint32(0), regex.StringBufferSize())
+	require.NoError(t, regex.SetRegexString(ctx, `^abcde$`, RegexFlags_None))
+	err = regex.SetMatchString(ctx, "abcde")
+	require.NoError(t, err)
+	ok, err = regex.Matches(ctx, 0, 0)
+	require.NoError(t, err)
+	require.True(t, ok)
+	err = regex.SetMatchString(ctx, "aBCDe")
+	require.NoError(t, err)
+	ok, err = regex.Matches(ctx, 0, 0)
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.NoError(t, regex.Close())
 }
 
 func TestRegexReplace(t *testing.T) {
 	ctx := context.Background()
-	regex := CreateRegex()
+	regex := CreateRegex(512 * 1024)
 	require.NoError(t, regex.SetRegexString(ctx, `[a-z]+`, RegexFlags_None))
 	err := regex.SetMatchString(ctx, "abc def ghi")
 	require.NoError(t, err)

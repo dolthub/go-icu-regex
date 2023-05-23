@@ -26,17 +26,18 @@ type CharPtr int32
 
 // void* malloc(size_t size)
 func (pr *privateRegex) malloc(ctx context.Context, sz uint32) (uint32, error) {
-	res, err := pr.f_malloc.Call(ctx, uint64(sz))
+	pr.callStack[0] = uint64(sz)
+	err := pr.f_malloc.CallWithStack(ctx, pr.callStack[:])
 	if err != nil {
 		return 0, err
 	}
-	return uint32(res[0]), nil
+	return uint32(pr.callStack[0]), nil
 }
 
 // void free(void* ptr)
 func (pr *privateRegex) free(ctx context.Context, ptr uint32) error {
-	_, err := pr.f_free.Call(ctx, uint64(ptr))
-	return err
+	pr.callStack[0] = uint64(ptr)
+	return pr.f_free.CallWithStack(ctx, pr.callStack[:])
 }
 
 // UChar* replace(URegularExpression* regexp, UChar* replacement, int replacementLen, UChar* original, int originalSize, int start, int occurrence, int* returnSize)
@@ -54,11 +55,12 @@ func (pr *privateRegex) replace(ctx context.Context, regex URegularExpressionPtr
 		*returnSize = int(res)
 	}()
 
-	res, err := pr.f_replace.Call(ctx, uint64(regex), uint64(replacement), uint64(replacementLen), uint64(original), uint64(originalSize), uint64(start), uint64(occurrence), returnSizeAddr)
+	copy(pr.callStack[:], []uint64{uint64(regex), uint64(replacement), uint64(replacementLen), uint64(original), uint64(originalSize), uint64(start), uint64(occurrence), returnSizeAddr})
+	err = pr.f_replace.CallWithStack(ctx, pr.callStack[:])
 	if err != nil {
 		return 0, err
 	}
-	return UCharPtr(res[0]), err
+	return UCharPtr(pr.callStack[0]), err
 }
 
 // URegularExpression* uregex_open(const UChar* pattern, int32_t patternLength, uint32_t flags, UErrorCode* status);
@@ -76,17 +78,18 @@ func (pr *privateRegex) uregex_open(ctx context.Context, str UCharPtr, strlen in
 		*uerr = UErrorCode(res)
 	}()
 
-	res, err := pr.f_uregex_open.Call(ctx, uint64(str), uint64(strlen), uint64(flags), uint64(0), uerrAddr)
+	copy(pr.callStack[:], []uint64{uint64(str), uint64(strlen), uint64(flags), uint64(0), uerrAddr})
+	err = pr.f_uregex_open.CallWithStack(ctx, pr.callStack[:])
 	if err != nil {
 		return 0, err
 	}
-	return URegularExpressionPtr(res[0]), nil
+	return URegularExpressionPtr(pr.callStack[0]), nil
 }
 
 // void uregex_close(URegularExpression* regexp)
 func (pr *privateRegex) uregex_close(ctx context.Context, p URegularExpressionPtr) error {
-	_, err := pr.f_uregex_close.Call(ctx, uint64(p))
-	return err
+	pr.callStack[0] = uint64(p)
+	return pr.f_uregex_close.CallWithStack(ctx, pr.callStack[:])
 }
 
 // int32_t uregex_start(URegularExpression *regexp, int32_t groupNum, UErrorCode* status)
@@ -104,11 +107,12 @@ func (pr *privateRegex) uregex_start(ctx context.Context, regex URegularExpressi
 		*uerr = UErrorCode(res)
 	}()
 
-	res, err := pr.f_uregex_start.Call(ctx, uint64(regex), uint64(group), uerrAddr)
+	copy(pr.callStack[:], []uint64{uint64(regex), uint64(group), uerrAddr})
+	err = pr.f_uregex_start.CallWithStack(ctx, pr.callStack[:])
 	if err != nil {
 		return 0, err
 	}
-	return int32(res[0]), nil
+	return int32(pr.callStack[0]), nil
 }
 
 // int32_t uregex_end(URegularExpression* regexp, int32_t groupNum, UErrorCode* status)
@@ -126,11 +130,12 @@ func (pr *privateRegex) uregex_end(ctx context.Context, regex URegularExpression
 		*uerr = UErrorCode(res)
 	}()
 
-	res, err := pr.f_uregex_end.Call(ctx, uint64(regex), uint64(group), uerrAddr)
+	copy(pr.callStack[:], []uint64{uint64(regex), uint64(group), uerrAddr})
+	err = pr.f_uregex_end.CallWithStack(ctx, pr.callStack[:])
 	if err != nil {
 		return 0, err
 	}
-	return int32(res[0]), nil
+	return int32(pr.callStack[0]), nil
 }
 
 // UBool uregex_find(URegularExpression* regexp, int32_t startIndex, UErrorCode* status)
@@ -148,11 +153,12 @@ func (pr *privateRegex) uregex_find(ctx context.Context, regex URegularExpressio
 		*uerr = UErrorCode(res)
 	}()
 
-	res, err := pr.f_uregex_find.Call(ctx, uint64(regex), uint64(startIndex), uerrAddr)
+	copy(pr.callStack[:], []uint64{uint64(regex), uint64(startIndex), uerrAddr})
+	err = pr.f_uregex_find.CallWithStack(ctx, pr.callStack[:])
 	if err != nil {
 		return false, err
 	}
-	return res[0] != 0, nil
+	return pr.callStack[0] != 0, nil
 }
 
 // UBool uregex_findNext(URegularExpression* regexp, UErrorCode* status)
@@ -170,11 +176,12 @@ func (pr *privateRegex) uregex_findNext(ctx context.Context, regex URegularExpre
 		*uerr = UErrorCode(res)
 	}()
 
-	res, err := pr.f_uregex_findNext.Call(ctx, uint64(regex), uerrAddr)
+	copy(pr.callStack[:], []uint64{uint64(regex), uerrAddr})
+	err = pr.f_uregex_findNext.CallWithStack(ctx, pr.callStack[:])
 	if err != nil {
 		return false, err
 	}
-	return res[0] != 0, nil
+	return pr.callStack[0] != 0, nil
 }
 
 // UChar* uregex_getText(URegularExpression *regexp, int32_t* textLength, UErrorCode* status)
@@ -203,11 +210,12 @@ func (pr *privateRegex) uregex_getText(ctx context.Context, p URegularExpression
 		*textLength = int(res)
 	}()
 
-	res, err := pr.f_uregex_getText.Call(ctx, uint64(p), textLengthAddr, uerrAddr)
+	copy(pr.callStack[:], []uint64{uint64(p), textLengthAddr, uerrAddr})
+	err = pr.f_uregex_getText.CallWithStack(ctx, pr.callStack[:])
 	if err != nil {
 		return 0, err
 	}
-	return UCharPtr(res[0]), nil
+	return UCharPtr(pr.callStack[0]), nil
 }
 
 // void uregex_setText(URegularExpression* regexp, const UChar* text, int32_t textLength, UErrorCode* status)
@@ -225,8 +233,8 @@ func (pr *privateRegex) uregex_setText(ctx context.Context, p URegularExpression
 		*uerr = UErrorCode(res)
 	}()
 
-	_, err = pr.f_uregex_setText.Call(ctx, uint64(p), uint64(str), uint64(strlen), uerrAddr)
-	return err
+	copy(pr.callStack[:], []uint64{uint64(p), uint64(str), uint64(strlen), uerrAddr})
+	return pr.f_uregex_setText.CallWithStack(ctx, pr.callStack[:])
 }
 
 // int32_t uregex_replaceFirst(URegularExpression* regexp, const UChar* replacementText, int32_t replacementLength, UChar* destBuf, int32_t destCapacity, UErrorCode* status);
@@ -245,11 +253,12 @@ func (pr *privateRegex) uregex_replaceFirst(ctx context.Context, p URegularExpre
 		*uerr = UErrorCode(res)
 	}()
 
-	res, err := pr.f_uregex_replaceFirst.Call(ctx, uint64(p), uint64(replacementText), uint64(replacementLength), uint64(destBuf), uint64(destCapacity), uerrAddr)
+	copy(pr.callStack[:], []uint64{uint64(p), uint64(replacementText), uint64(replacementLength), uint64(destBuf), uint64(destCapacity), uerrAddr})
+	err = pr.f_uregex_replaceFirst.CallWithStack(ctx, pr.callStack[:])
 	if err != nil {
 		return 0, err
 	}
-	return int(res[0]), nil
+	return int(pr.callStack[0]), nil
 }
 
 // int32_t uregex_replaceAll(URegularExpression* regexp, const UChar* replacementText, int32_t replacementLength, UChar* destBuf, int32_t destCapacity, UErrorCode* status);
@@ -268,11 +277,12 @@ func (pr *privateRegex) uregex_replaceAll(ctx context.Context, p URegularExpress
 		*uerr = UErrorCode(res)
 	}()
 
-	res, err := pr.f_uregex_replaceAll.Call(ctx, uint64(p), uint64(replacementText), uint64(replacementLength), uint64(destBuf), uint64(destCapacity), uerrAddr)
+	copy(pr.callStack[:], []uint64{uint64(p), uint64(replacementText), uint64(replacementLength), uint64(destBuf), uint64(destCapacity), uerrAddr})
+	err = pr.f_uregex_replaceAll.CallWithStack(ctx, pr.callStack[:])
 	if err != nil {
 		return 0, err
 	}
-	return int(res[0]), nil
+	return int(pr.callStack[0]), nil
 }
 
 // int32_t uregex_appendReplacement(URegularExpression* regexp, UChar* replacementText, int32_t replacementLength, UChar** destBuf, int32_t* destCapacity, UErrorCode* status)
@@ -311,11 +321,12 @@ func (pr *privateRegex) uregex_appendReplacement(ctx context.Context, p URegular
 		*destCapacity = int(res)
 	}()
 
-	res, err := pr.f_uregex_appendReplacement.Call(ctx, uint64(p), uint64(replacementText), uint64(replacementLength), destBufAddr, destCapacityAddr, uerrAddr)
+	copy(pr.callStack[:], []uint64{uint64(p), uint64(replacementText), uint64(replacementLength), destBufAddr, destCapacityAddr, uerrAddr})
+	err = pr.f_uregex_appendReplacement.CallWithStack(ctx, pr.callStack[:])
 	if err != nil {
 		return 0, err
 	}
-	return int(res[0]), nil
+	return int(pr.callStack[0]), nil
 }
 
 // int32_t uregex_appendTail(URegularExpression* regexp, UChar** destBuf, int32_t* destCapacity, UErrorCode* status)
@@ -354,8 +365,8 @@ func (pr *privateRegex) uregex_appendTail(ctx context.Context, p URegularExpress
 		*destCapacity = int(res)
 	}()
 
-	_, err = pr.f_uregex_appendTail.Call(ctx, uint64(p), destBufAddr, destCapacityAddr, uerrAddr)
-	return err
+	copy(pr.callStack[:], []uint64{uint64(p), destBufAddr, destCapacityAddr, uerrAddr})
+	return pr.f_uregex_appendTail.CallWithStack(ctx, pr.callStack[:])
 }
 
 // char* u_strToUTF8(char* dest, int32_t destCapacity, int32_t* pDestLength, const UChar* src, int32_t srcLength, UErrorCode* pErrorCode)
@@ -385,8 +396,9 @@ func (pr *privateRegex) u_strToUTF8(ctx context.Context, buff CharPtr, bufflen i
 			*outlen = int(res)
 		}()
 	}
-	_, err = pr.f_u_strToUTF8.Call(ctx, uint64(buff), uint64(bufflen), uint64(outlenptr), uint64(str), uint64(strlen), uerrAddr)
-	return err
+
+	copy(pr.callStack[:], []uint64{uint64(buff), uint64(bufflen), uint64(outlenptr), uint64(str), uint64(strlen), uerrAddr})
+	return pr.f_u_strToUTF8.CallWithStack(ctx, pr.callStack[:])
 }
 
 // UChar* u_strFromUTF8(UChar* dest, int32_t destCapacity, int32_t* pDestLength, const char* src, int32_t srcLength, UErrorCode* pErrorCode)
@@ -417,6 +429,7 @@ func (pr *privateRegex) u_strFromUTF8(ctx context.Context, buff UCharPtr, buffle
 			*outlen = int(res)
 		}()
 	}
-	_, err = pr.f_u_strFromUTF8.Call(ctx, uint64(buff), uint64(bufflen), uint64(outlenptr), uint64(str), uint64(strlen), uerrAddr)
-	return err
+
+	copy(pr.callStack[:], []uint64{uint64(buff), uint64(bufflen), uint64(outlenptr), uint64(str), uint64(strlen), uerrAddr})
+	return pr.f_u_strFromUTF8.CallWithStack(ctx, pr.callStack[:])
 }

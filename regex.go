@@ -39,6 +39,9 @@ type Regex interface {
 	// Replace returns a new string with the replacement string occupying the matched portions of the match string,
 	// based on the regex. Position starts at 1, not 0. Must call SetRegexString and SetMatchString before this function.
 	Replace(ctx context.Context, replacementStr string, position int, occurrence int) (string, error)
+	// StringBufferSize returns the size of the string buffers, in bytes. If the string buffer is not being used, then
+	// this returns zero.
+	StringBufferSize() uint32
 	// Close frees up the internal resources. This MUST be called, else a panic will occur at some non-deterministic time.
 	Close() error
 }
@@ -95,16 +98,24 @@ const (
 	RegexFlags_Error_On_Unknown_Escapes RegexFlags = 512
 )
 
-// CreateRegex creates a Regex. Once the Regex is done with, you must remember to call Close. This Regex is intended
-// for single-threaded use only, therefore it is advised for each thread to use its own Regex when one is needed.
-func CreateRegex() Regex {
+// CreateRegex creates a Regex, with a region of memory that has been preallocated to support strings that are less than
+// or equal to the given size. Such strings will skip the allocation and deallocation phases, which save time. A size of
+// zero will force all strings to be allocated and deallocated. The buffer is defined for one string, therefore double
+// the amount given will actually be consumed (regex and match strings). Once the Regex is done with, you must remember
+// to call Close. This Regex is intended for single-threaded use only, therefore it is advised for each thread to use
+// its own Regex when one is needed.
+func CreateRegex(stringBufferInBytes uint32) Regex {
 	mod := modulePool.Get().(api.Module)
 	pr := &privateRegex{
-		mod:          mod,
-		regexPtr:     0,
-		regexStrUPtr: 0,
-		matchStrUPtr: 0,
-		matchStr:     "",
+		mod:             mod,
+		regexPtr:        0,
+		regexStrUPtr:    0,
+		matchStrUPtr:    0,
+		matchStrUPtrLen: 0,
+
+		bufferSize:     stringBufferInBytes,
+		regexStrBuffer: 0,
+		matchStrBuffer: 0,
 
 		g_globalStackVar: mod.ExportedGlobal("globalStackVar").(api.MutableGlobal),
 
@@ -126,6 +137,26 @@ func CreateRegex() Regex {
 		f_u_strToUTF8:              mod.ExportedFunction("u_strToUTF8_68"),
 		f_u_strFromUTF8:            mod.ExportedFunction("u_strFromUTF8_68"),
 	}
+	// If we're creating string buffers, then we'll preallocate them
+	if stringBufferInBytes > 0 {
+		ctx := context.Background()
+		regexStrBuffer, err := pr.malloc(ctx, stringBufferInBytes)
+		if err != nil || regexStrBuffer == 0 {
+			// If we get an error or couldn't allocate the buffer, then we'll just disable the string buffer
+			pr.bufferSize = 0
+		} else {
+			matchStrBuffer, err := pr.malloc(ctx, stringBufferInBytes)
+			if err != nil || matchStrBuffer == 0 {
+				pr.bufferSize = 0
+				if err = pr.free(ctx, regexStrBuffer); err != nil {
+					panic(err) // This shouldn't fail, so we'll panic here, because something is very wrong
+				}
+			} else {
+				pr.regexStrBuffer = UCharPtr(regexStrBuffer)
+				pr.matchStrBuffer = UCharPtr(matchStrBuffer)
+			}
+		}
+	}
 	// This finalizer will let us know if a user never called Close. Although the module would eventually be reclaimed
 	// by GC, this finalizer ensures that regexes are being used as efficiently as possible by maximizing pool rotations.
 	// Hopefully, this would be caught during development and not in production.
@@ -144,7 +175,12 @@ type privateRegex struct {
 	regexStrUPtr    UCharPtr
 	matchStrUPtr    UCharPtr
 	matchStrUPtrLen int
-	matchStr        string
+	callStack       [8]uint64
+
+	// Buffer details
+	bufferSize     uint32
+	regexStrBuffer UCharPtr
+	matchStrBuffer UCharPtr
 
 	// Global Variables
 	g_globalStackVar api.MutableGlobal
@@ -179,12 +215,16 @@ func (pr *privateRegex) SetRegexString(ctx context.Context, regexStr string, fla
 
 	// Convert regexStr to UTF16LE and then copy it to WASM memory
 	utf16RegexStr, regexStrULen := toUTF16(regexStr)
-	regexStrUPtr, err := pr.malloc(ctx, uint32(regexStrULen*2))
-	if err != nil {
-		return err
+	if uint32(regexStrULen*2) <= pr.bufferSize {
+		pr.regexStrUPtr = pr.regexStrBuffer
+	} else {
+		regexStrUPtr, err := pr.malloc(ctx, uint32(regexStrULen*2))
+		if err != nil {
+			return err
+		}
+		pr.regexStrUPtr = UCharPtr(regexStrUPtr)
 	}
-	pr.regexStrUPtr = UCharPtr(regexStrUPtr)
-	pr.mod.Memory().Write(regexStrUPtr, utf16RegexStr)
+	pr.mod.Memory().Write(uint32(pr.regexStrUPtr), utf16RegexStr)
 
 	// Create the URegularExpression*
 	errorCode := UErrorCode(0)
@@ -213,24 +253,27 @@ func (pr *privateRegex) SetMatchString(ctx context.Context, matchStr string) (er
 
 	// Convert matchStr to UTF16LE and then copy it to WASM memory
 	utf16MatchStr, matchStrULen := toUTF16(matchStr)
-	matchStrUPtr, err := pr.malloc(ctx, uint32(matchStrULen*2))
-	if err != nil {
-		return err
+	if uint32(matchStrULen*2) <= pr.bufferSize {
+		pr.matchStrUPtr = pr.matchStrBuffer
+	} else {
+		matchStrUPtr, err := pr.malloc(ctx, uint32(matchStrULen*2))
+		if err != nil {
+			return err
+		}
+		pr.matchStrUPtr = UCharPtr(matchStrUPtr)
 	}
-	pr.matchStrUPtr = UCharPtr(matchStrUPtr)
 	pr.matchStrUPtrLen = matchStrULen
-	pr.mod.Memory().Write(matchStrUPtr, utf16MatchStr)
+	pr.mod.Memory().Write(uint32(pr.matchStrUPtr), utf16MatchStr)
 
 	// Set the text on the URegularExpression*
 	errorCode := UErrorCode(0)
-	err = pr.uregex_setText(ctx, pr.regexPtr, UCharPtr(matchStrUPtr), matchStrULen, &errorCode)
+	err = pr.uregex_setText(ctx, pr.regexPtr, pr.matchStrUPtr, matchStrULen, &errorCode)
 	if err != nil {
 		return err
 	}
 	if errorCode > 0 {
 		return fmt.Errorf("unexpected UErrorCode from uregex_setText: %d", errorCode)
 	}
-	pr.matchStr = matchStr
 	return nil
 }
 
@@ -308,14 +351,30 @@ func (pr *privateRegex) Replace(ctx context.Context, replacementStr string, star
 	return fromUTF16(returnStrBytes), nil
 }
 
+// StringBufferSize implements the interface Regex.
+func (pr *privateRegex) StringBufferSize() uint32 {
+	return pr.bufferSize
+}
+
 // Close implements the interface Regex.
 func (pr *privateRegex) Close() (err error) {
-	if pr == nil {
+	if pr == nil || pr.mod == nil {
 		return nil
 	}
 	err = pr.closeRegexPtrs()
 	if nErr := pr.closeMatchPtr(); err == nil {
 		err = nErr
+	}
+	// As we do not free the buffers in the other close functions (since they may be called without intending to close
+	// the regex as a whole), we take care of freeing them here.
+	if pr.bufferSize > 0 {
+		ctx := context.Background()
+		if nErr := pr.free(ctx, uint32(pr.regexStrBuffer)); err == nil {
+			err = nErr
+		}
+		if nErr := pr.free(ctx, uint32(pr.matchStrBuffer)); err == nil {
+			err = nErr
+		}
 	}
 	if pr.mod != nil {
 		modulePool.Put(pr.mod)
@@ -325,30 +384,29 @@ func (pr *privateRegex) Close() (err error) {
 	return err
 }
 
-// closeRegexPtr closes the regex pointers if they exist.
+// closeRegexPtr closes the regex pointers if they exist. This will not free the string buffer if it is being used.
 func (pr *privateRegex) closeRegexPtrs() (err error) {
 	ctx := context.Background()
 	if pr.regexPtr != 0 {
 		err = pr.uregex_close(ctx, pr.regexPtr)
-		pr.regexPtr = 0
 	}
-	if pr.regexStrUPtr != 0 {
+	if pr.regexStrUPtr != pr.regexStrBuffer && pr.regexStrUPtr != 0 {
 		if freeErr := pr.free(ctx, uint32(pr.regexStrUPtr)); err == nil {
 			err = freeErr
 		}
-		pr.regexStrUPtr = 0
 	}
+	pr.regexPtr = 0
+	pr.regexStrUPtr = 0
 	return err
 }
 
-// closeMatchPtr closes the match string pointer if it exists.
+// closeMatchPtr closes the match string pointer if it exists. This will not free the string buffer if it is being used.
 func (pr *privateRegex) closeMatchPtr() (err error) {
-	if pr.matchStrUPtr != 0 {
+	if pr.matchStrUPtr != pr.matchStrBuffer && pr.matchStrUPtr != 0 {
 		err = pr.free(context.Background(), uint32(pr.matchStrUPtr))
-		pr.matchStrUPtr = 0
-		pr.matchStrUPtrLen = 0
-		pr.matchStr = ""
 	}
+	pr.matchStrUPtr = 0
+	pr.matchStrUPtrLen = 0
 	return err
 }
 
