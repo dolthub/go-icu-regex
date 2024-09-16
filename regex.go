@@ -55,6 +55,9 @@ var (
 	ErrInvalidRegex = errors.NewKind("the given regular expression is invalid")
 )
 
+// ShouldPanic determines whether the finalizer will panic if it finds a Regex that has not been closed.
+var ShouldPanic bool = true
+
 // RegexFlags are flags to define the behavior of the regular expression. Use OR (|) to combine flags. All flag values
 // were taken directly from ICU.
 type RegexFlags uint32
@@ -161,7 +164,7 @@ func CreateRegex(stringBufferInBytes uint32) Regex {
 	// by GC, this finalizer ensures that regexes are being used as efficiently as possible by maximizing pool rotations.
 	// Hopefully, this would be caught during development and not in production.
 	runtime.SetFinalizer(pr, func(pr *privateRegex) {
-		if pr.mod != nil {
+		if pr.mod != nil && ShouldPanic {
 			panic("Finalizer found a Regex that was never closed")
 		}
 	})
