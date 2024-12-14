@@ -364,6 +364,12 @@ func (pr *privateRegex) Close() (err error) {
 	if pr == nil || pr.mod == nil {
 		return nil
 	}
+    defer func() {
+		modulePool.Put(pr.mod)
+		pr.mod = nil
+		runtime.SetFinalizer(pr, nil)
+	}()
+
 	err = pr.closeRegexPtrs()
 	if nErr := pr.closeMatchPtr(); err == nil {
 		err = nErr
@@ -378,11 +384,6 @@ func (pr *privateRegex) Close() (err error) {
 		if nErr := pr.free(ctx, uint32(pr.matchStrBuffer)); err == nil {
 			err = nErr
 		}
-	}
-	if pr.mod != nil {
-		modulePool.Put(pr.mod)
-		pr.mod = nil
-		runtime.SetFinalizer(pr, nil)
 	}
 	return err
 }
