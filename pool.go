@@ -43,7 +43,7 @@ type RuntimeTracker struct {
 type Pool struct {
 	mutex           *sync.Mutex
 	runtimes        []*RuntimeTracker
-	returnedModules map[uintptr]uint64
+	outstandingMods map[uintptr]uint64
 	nextId          uint64
 	maxFetch        uint64
 }
@@ -61,7 +61,7 @@ func NewPool() *Pool {
 			max:      0,
 			fetches:  0,
 		}},
-		returnedModules: make(map[uintptr]uint64),
+		outstandingMods: make(map[uintptr]uint64),
 		nextId:          2,
 		maxFetch:        128,
 	}
@@ -105,7 +105,7 @@ func (pool *Pool) Get() api.Module {
 		rtracker.modules = rtracker.modules[:len(rtracker.modules)-1]
 	}
 	// Now we need to track that this module is being returned
-	pool.returnedModules[reflect.ValueOf(module).Pointer()] = rtracker.id
+	pool.outstandingMods[reflect.ValueOf(module).Pointer()] = rtracker.id
 	runtime.SetFinalizer(module, func(module api.Module) {
 		pool.finalized(module)
 	})
@@ -136,8 +136,8 @@ func (pool *Pool) receivedModule(module api.Module, isPut bool) {
 	}
 	// Grab the runtime ID and remove the module from the tracking map
 	ptr := reflect.ValueOf(module).Pointer()
-	runtimeId := pool.returnedModules[ptr]
-	delete(pool.returnedModules, ptr)
+	runtimeId := pool.outstandingMods[ptr]
+	delete(pool.outstandingMods, ptr)
 	for rtrackerIdx := 0; rtrackerIdx < len(pool.runtimes); rtrackerIdx++ {
 		ctx := context.Background()
 		rtracker := pool.runtimes[rtrackerIdx]
