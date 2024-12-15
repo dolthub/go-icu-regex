@@ -108,7 +108,7 @@ const (
 // to call Close. This Regex is intended for single-threaded use only, therefore it is advised for each thread to use
 // its own Regex when one is needed.
 func CreateRegex(stringBufferInBytes uint32) Regex {
-	mod := modulePool.Get().(api.Module)
+	mod := modulePool.Get()
 	pr := &privateRegex{
 		mod:             mod,
 		regexPtr:        0,
