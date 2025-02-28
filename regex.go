@@ -33,12 +33,19 @@ type Regex interface {
 	// SetMatchString sets the string that we will either be matching against, or executing the replacements on. This
 	// must be called after SetRegexString, but before any other calls.
 	SetMatchString(ctx context.Context, matchStr string) error
+	// IndexOf returns the index of the previously-set regex matching the previously-set match string. Must call
+	// SetRegexString and SetMatchString before this function. `endIndex` determines whether the returned index is at
+	// the beginning or end of the match. `start` and `occurrence` start at 1, not 0.
+	IndexOf(ctx context.Context, start int, occurrence int, endIndex bool) (int, error)
 	// Matches returns whether the previously-set regex matches the previously-set match string. Must call
 	// SetRegexString and SetMatchString before this function.
 	Matches(ctx context.Context, start int, occurrence int) (bool, error)
 	// Replace returns a new string with the replacement string occupying the matched portions of the match string,
 	// based on the regex. Position starts at 1, not 0. Must call SetRegexString and SetMatchString before this function.
 	Replace(ctx context.Context, replacementStr string, position int, occurrence int) (string, error)
+	// Substring returns the match of the previously-set match string, using the previously-set regex. Must call
+	// SetRegexString and SetMatchString before this function. `start` and `occurrence` start at 1, not 0.
+	Substring(ctx context.Context, start int, occurrence int) (string, bool, error)
 	// StringBufferSize returns the size of the string buffers, in bytes. If the string buffer is not being used, then
 	// this returns zero.
 	StringBufferSize() uint32
@@ -280,6 +287,56 @@ func (pr *privateRegex) SetMatchString(ctx context.Context, matchStr string) (er
 	return nil
 }
 
+// IndexOf implements the interface Regex.
+func (pr *privateRegex) IndexOf(ctx context.Context, start int, occurrence int, endIndex bool) (int, error) {
+	// Check for the regex pointer first
+	if pr.regexPtr == 0 {
+		return 0, ErrRegexNotYetSet.New()
+	}
+
+	// Check that the match string has been set
+	if pr.matchStrUPtr == 0 {
+		return 0, ErrMatchNotYetSet.New()
+	}
+
+	// Look for a match
+	var errorCode UErrorCode
+	ok, err := pr.uregex_find(ctx, pr.regexPtr, start-1, &errorCode)
+	if err != nil {
+		return 0, err
+	}
+	for i := 1; i < occurrence && ok; i++ {
+		ok, err = pr.uregex_findNext(ctx, pr.regexPtr, &errorCode)
+		if err != nil {
+			return 0, err
+		}
+	}
+	if !ok {
+		return -1, nil
+	}
+
+	// Get the index of the match
+	var index int
+	if endIndex {
+		index32, err := pr.uregex_end(ctx, pr.regexPtr, 0, &errorCode)
+		if err != nil {
+			return 0, err
+		}
+		index = int(index32)
+	} else {
+		index32, err := pr.uregex_start(ctx, pr.regexPtr, 0, &errorCode)
+		if err != nil {
+			return 0, err
+		}
+		index = int(index32)
+	}
+	if errorCode > 0 {
+		return 0, fmt.Errorf("unexpected UErrorCode from uregex_find/uregex_findNext: %d", errorCode)
+	}
+
+	return index, nil
+}
+
 // Matches implements the interface Regex.
 func (pr *privateRegex) Matches(ctx context.Context, start int, occurrence int) (ok bool, err error) {
 	// Check for the regex pointer first
@@ -352,6 +409,54 @@ func (pr *privateRegex) Replace(ctx context.Context, replacementStr string, star
 		return "", fmt.Errorf("somehow failed when retrieving the string with replacements")
 	}
 	return fromUTF16(returnStrBytes), nil
+}
+
+// Substring implements the interface Regex.
+func (pr *privateRegex) Substring(ctx context.Context, start int, occurrence int) (string, bool, error) {
+	// Check for the regex pointer first
+	if pr.regexPtr == 0 {
+		return "", false, ErrRegexNotYetSet.New()
+	}
+
+	// Check that the match string has been set
+	if pr.matchStrUPtr == 0 {
+		return "", false, ErrMatchNotYetSet.New()
+	}
+
+	// Look for a match
+	var errorCode UErrorCode
+	ok, err := pr.uregex_find(ctx, pr.regexPtr, start-1, &errorCode)
+	if err != nil {
+		return "", false, err
+	}
+	for i := 1; i < occurrence && ok; i++ {
+		ok, err = pr.uregex_findNext(ctx, pr.regexPtr, &errorCode)
+		if err != nil {
+			return "", false, err
+		}
+	}
+	if !ok {
+		return "", false, nil
+	}
+
+	// Get the bounds of the match
+	idxStart, err := pr.uregex_start(ctx, pr.regexPtr, 0, &errorCode)
+	if err != nil {
+		return "", false, err
+	}
+	idxEnd, err := pr.uregex_end(ctx, pr.regexPtr, 0, &errorCode)
+	if err != nil {
+		return "", false, err
+	}
+	if errorCode > 0 {
+		return "", false, fmt.Errorf("unexpected UErrorCode from uregex_find/uregex_findNext: %d", errorCode)
+	}
+
+	returnStrBytes, ok := pr.mod.Memory().Read(uint32(pr.matchStrUPtr)+uint32(idxStart*2), uint32((idxEnd-idxStart)*2))
+	if !ok {
+		return "", false, fmt.Errorf("somehow failed when retrieving the substring")
+	}
+	return fromUTF16(returnStrBytes), true, nil
 }
 
 // StringBufferSize implements the interface Regex.
