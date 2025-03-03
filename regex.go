@@ -35,7 +35,7 @@ type Regex interface {
 	SetMatchString(ctx context.Context, matchStr string) error
 	// IndexOf returns the index of the previously-set regex matching the previously-set match string. Must call
 	// SetRegexString and SetMatchString before this function. `endIndex` determines whether the returned index is at
-	// the beginning or end of the match. `start` and `occurrence` start at 1, not 0.
+	// the beginning or end of the match. `start` and `occurrence` start at 1, not 0. Returns 0 if the index was not found.
 	IndexOf(ctx context.Context, start int, occurrence int, endIndex bool) (int, error)
 	// Matches returns whether the previously-set regex matches the previously-set match string. Must call
 	// SetRegexString and SetMatchString before this function.
@@ -312,7 +312,7 @@ func (pr *privateRegex) IndexOf(ctx context.Context, start int, occurrence int, 
 		}
 	}
 	if !ok {
-		return -1, nil
+		return 0, nil
 	}
 
 	// Get the index of the match
@@ -334,7 +334,7 @@ func (pr *privateRegex) IndexOf(ctx context.Context, start int, occurrence int, 
 		return 0, fmt.Errorf("unexpected UErrorCode from uregex_find/uregex_findNext: %d", errorCode)
 	}
 
-	return index, nil
+	return index + 1, nil
 }
 
 // Matches implements the interface Regex.
