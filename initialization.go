@@ -16,12 +16,13 @@ package regex
 
 import (
 	_ "embed"
+
 	"github.com/tetratelabs/wazero"
 )
 
 // Embedded data that will be loaded into our WASM runtime
 var (
 	//go:embed icu/wasm/icu.wasm
-	icuWasm []byte // This is generated using the "build.sh" script in the "icu" folder
+	icuWasm   []byte // This is generated using the "build.sh" script in the "icu" folder
 	icuConfig = wazero.NewModuleConfig()
 )
