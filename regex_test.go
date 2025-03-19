@@ -16,7 +16,10 @@ package regex
 
 import (
 	"context"
+	"runtime"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -186,4 +189,30 @@ func TestRegexSubstring(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "ghx", substr)
 	require.NoError(t, regex.Close())
+}
+
+// TestRegexLeakHandler asserts that RegexLeakHandler is invoked when a regex is not closed before
+// it gets garbage collected.
+func TestRegexLeakHandler(t *testing.T) {
+	leakHandlerCalled := atomic.Bool{}
+
+	SetRegexLeakHandler(func() {
+		leakHandlerCalled.Store(true)
+	})
+	defer func() {
+		SetRegexLeakHandler(nil)
+	}()
+
+	regex := CreateRegex(1024)
+	regex.Close()
+	regex = nil
+	runtime.GC()
+	time.Sleep(500 * time.Millisecond)
+	require.False(t, leakHandlerCalled.Load())
+
+	regex = CreateRegex(1024)
+	regex = nil
+	runtime.GC()
+	time.Sleep(500 * time.Millisecond)
+	require.True(t, leakHandlerCalled.Load())
 }
