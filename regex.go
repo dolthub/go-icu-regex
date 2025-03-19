@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"runtime"
+	"sync/atomic"
 	"unicode/utf16"
 
 	"github.com/tetratelabs/wazero/api"
@@ -63,7 +64,28 @@ var (
 )
 
 // ShouldPanic determines whether the finalizer will panic if it finds a Regex that has not been closed.
-var ShouldPanic bool = true
+var ShouldPanic = true
+
+// RegexLeakHandler is a callback function that will be invoked if a finalizer is called for a Regex that has not
+// been closed. This allows applications to provide custom handling logic beyond panicing if a Regex leak is detected.
+var regexLeakHandler atomic.Value
+
+// SetRegexLeakHandler sets a |handler| function to be executed if a finalizer is called for a Regex instance that
+// has not been properly closed through it's Close() method. Note that if a custom leak handler function is provided,
+// the ShouldPanic variable will be ignored and the code will not panic if a Regex leak is detected.
+func SetRegexLeakHandler(handler func()) {
+	regexLeakHandler.Store(handler)
+}
+
+// getRegexLeakHandler returns the custom handler function set by SetRegexLeakHandler, or nil if no custom handler has
+// been set.
+func getRegexLeakHandler() func() {
+	val := regexLeakHandler.Load()
+	if val == nil {
+		return nil
+	}
+	return val.(func())
+}
 
 // RegexFlags are flags to define the behavior of the regular expression. Use OR (|) to combine flags. All flag values
 // were taken directly from ICU.
@@ -171,8 +193,13 @@ func CreateRegex(stringBufferInBytes uint32) Regex {
 	// by GC, this finalizer ensures that regexes are being used as efficiently as possible by maximizing pool rotations.
 	// Hopefully, this would be caught during development and not in production.
 	runtime.SetFinalizer(pr, func(pr *privateRegex) {
-		if pr.mod != nil && ShouldPanic {
-			panic("Finalizer found a Regex that was never closed")
+		if pr.mod != nil {
+			if leakHandler := getRegexLeakHandler(); leakHandler != nil {
+				leakHandler()
+			} else if ShouldPanic {
+				panic("Finalizer found a Regex that was never closed")
+			}
+			_ = pr.Close()
 		}
 	})
 	return pr
