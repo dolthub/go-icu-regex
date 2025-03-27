@@ -178,7 +178,7 @@ func (pool *Pool) closeRuntime(ctx context.Context, rtrackerIdx int, rtracker *R
 	// We then remove the runtime from the slice
 	newSlice := make([]*RuntimeTracker, len(pool.runtimes)-1)
 	copy(newSlice, pool.runtimes[:rtrackerIdx])
-	copy(newSlice, pool.runtimes[rtrackerIdx+1:])
+	copy(newSlice[rtrackerIdx:], pool.runtimes[rtrackerIdx+1:])
 	pool.runtimes = newSlice
 }
 
