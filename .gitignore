@@ -40,3 +40,5 @@ test-server
 
 # OSX Files
 .DS_Store
+
+*~
