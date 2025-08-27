@@ -1,7 +1,8 @@
 # Compiled Object files, Static and Dynamic libs (Shared Objects)
 *.o
-*.a
 *.so
+# We check in static libraries to this repo...
+# *.a
 
 # Compiled binaries
 _example/_example
@@ -40,3 +41,5 @@ test-server
 
 # OSX Files
 .DS_Store
+
+*~
