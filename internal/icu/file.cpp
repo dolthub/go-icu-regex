@@ -1,6 +1,8 @@
 // This code has been adapted from https://github.com/mysql/mysql-server/blob/ea7087d885006918ad54458e7aad215b1650312c/sql/regexp/regexp_engine.cc
 
-#include <emscripten.h>
+// #cgo macos CFLAGS: -Ibin/darwin-aarch64/include
+// #cgo macos CXXFLAGS: -Ibin/darwin-aarch64/include
+
 #include "unicode/regex.h"
 
 #ifdef __cplusplus
@@ -53,7 +55,7 @@ void appendTail(URegularExpression* m_re, std::u16string& m_replace_buffer, int&
 	m_replace_buffer_pos += tail_size;
 }
 
-UChar* EMSCRIPTEN_KEEPALIVE replace(URegularExpression* regexp, UChar* replacement, int replacementLen, UChar* original, int originalSize, int start, int occurrence, int* returnSize) {
+UChar* replace(URegularExpression* regexp, UChar* replacement, int replacementLen, UChar* original, int originalSize, int start, int occurrence, int* returnSize) {
 	*returnSize = originalSize;
 	UErrorCode m_error_code = U_ZERO_ERROR;
 	std::u16string m_replace_buffer;
