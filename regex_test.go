@@ -16,13 +16,26 @@ package regex
 
 import (
 	"context"
-	"runtime"
-	"sync/atomic"
+	"sync"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestRegexpMatchLoop(t *testing.T) {
+	// Just test concurrency.
+	var wg sync.WaitGroup
+	wg.Add(16)
+	for i := 0; i < 16; i++ {
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 2048; i++ {
+				TestRegexMatch(t)
+			}
+		}()
+	}
+	wg.Wait()
+}
 
 func TestRegexMatch(t *testing.T) {
 	ctx := context.Background()
@@ -66,9 +79,7 @@ func TestRegexMatch(t *testing.T) {
 	require.True(t, ok)
 	require.NoError(t, regex.Close())
 
-	// 4GB buffer is too big, so it should just disable it and not error. Shouldn't affect anything else though.
-	regex = CreateRegex(0xFFFFFFFF)
-	require.Equal(t, uint32(0), regex.StringBufferSize())
+	regex = CreateRegex(128)
 	require.NoError(t, regex.SetRegexString(ctx, `^abcde$`, RegexFlags_None))
 	err = regex.SetMatchString(ctx, "abcde")
 	require.NoError(t, err)
@@ -189,30 +200,4 @@ func TestRegexSubstring(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "ghx", substr)
 	require.NoError(t, regex.Close())
-}
-
-// TestRegexLeakHandler asserts that RegexLeakHandler is invoked when a regex is not closed before
-// it gets garbage collected.
-func TestRegexLeakHandler(t *testing.T) {
-	leakHandlerCalled := atomic.Bool{}
-
-	SetRegexLeakHandler(func() {
-		leakHandlerCalled.Store(true)
-	})
-	defer func() {
-		SetRegexLeakHandler(nil)
-	}()
-
-	regex := CreateRegex(1024)
-	regex.Close()
-	regex = nil
-	runtime.GC()
-	time.Sleep(500 * time.Millisecond)
-	require.False(t, leakHandlerCalled.Load())
-
-	regex = CreateRegex(1024)
-	regex = nil
-	runtime.GC()
-	time.Sleep(500 * time.Millisecond)
-	require.True(t, leakHandlerCalled.Load())
 }

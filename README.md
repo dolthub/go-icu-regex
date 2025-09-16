@@ -1,28 +1,38 @@
 # ICU Regular Expressions in Go
 
-The [ICU library](https://github.com/unicode-org/icu) is used in MySQL to parse regular expressions.
-Go's built-in regular expressions follow a different standard than ICU, and thus can cause inconsistencies when attempting to match MySQL's behavior.
-These inconsistencies would hopefully result in an error (prompting user intervention), but may silently return unexpected results, raising no alarm when data is being modified in unexpected ways.
+Minimal bindings to [ICU4C](https://github.com/unicode-org/icu)'s regex implementation, for use in Go.
 
-To get around this, we've implemented the necessary ICU functions by compiling them into a [WebAssembly](https://webassembly.org/) module, and running the module using the [wazero](https://github.com/tetratelabs/wazero) library.
-Although this approach does come with a performance penalty, this allows for implementing packages to retain cross-compilation support, as CGo is not invoked due to this package.
+This package is not intended to be a general purpose binding. It's primary purpose is to support [dolt](https://github.com/dolthub/dolt)'s need for ICU-compatible regexes in order to implement MySQL-compatible functionality.
 
-## Building
+# Use
 
-To make modifications to the compiled WASM module, we've included a [build script](icu/build.sh).
-The requirements are as follows:
+```go
+// Create a regex
+regex := regex.CreateRegex(1024)
+defer regex.Close()
+// Set its pattern
+regex.SetRegexString(context.TODO(), "[abc]+", regex.RegexFlags_None)
+// Set its match string
+regex.SetMatchString(context.TODO(), "123abcabcabcdef")
+// Extract a matching substring; note start and occurence number are 1 indexed.
+substr, ok, err := regex.Substring(context.TODO(), 1, 1)
+assert.NoError(t, err)
+assert.True(t, ok)
+assert.Equals(t, substr, "abcabcabc")
+```
 
-* Emscripten v3.1.38
-* wasm2wat
-* wat2wasm
+# Building and Dependencies
 
-Other Emscripten versions may compile just fine, however they have not been tested, and thus we restrict compilation to only the tested version.
-This also means that the ICU library is version [68.1](https://github.com/unicode-org/icu/tree/5d81f6f9a0edc47892a1d2af7024f835b47deb82), as that is the only version that our supported version of Emscripten has ported.
-Both `wasm2wat` and `wat2wasm` exist to expose the global stack variable, as not all platforms will expose the variable.
-None of the exposed functions require [ICU's data](https://unicode-org.github.io/icu/userguide/icu_data/), thus it has been excluded to save on space and memory usage.
-MySQL, although collation aware (and in spite of what the documentation may suggest), does not make use of any collation functionality in the context of regular expressions.
+This library, and consequently anything that depends on it, requires ICU4C to build and link against. This library does not ship a pre-compiled version of ICU4C and does not build ICU4C alongside itself as part of its Cgo binding. Consequently, building this library or anything that depends on it requires a C++ toolchain and a version of ICU4C installed.
 
-## Notes
+For Windows, this library currently only supports MinGW. We are happy to accept changes to support other toolchains based on Go build tags, for example.
 
-Due to the high startup-cost of the WASM runtime, this package _enforces_ that all Regex objects are closed before being dereferenced.
-If any Regex objects are dereferenced before being closed, then a panic will occur at some non-deterministic point in the future.
+For Linux, a package like `libicu-dev` typically has the necessary library.
+
+For Windows, with msys2, `pacman -S icu-devel` installs the necessary development libraries.
+
+For macOS, `brew install icu4c` will install the necsesary library, but it is not on the default search path of the toolchain. Building with something like `CGO_CPPFLAGS=-I$(brew --cellar icu4c)/$(ls $(brew --cellar icu4c))/include CGO_LDFLAGS=-L$(brew --cellar icu4c)/$(ls $(brew --cellar icu4c))/lib` is potentially necessary.
+
+There is some support for statically linking ICU4C, by building with the build tag `icu_static`. Currently this only changes the linker line for a Windows build. For a macOS or Linux build to link it statically, the build tag `icu_static` should still be used, but it should also be the case that the dynamic libraries are not installed.
+
+When using a self-built dynamic library on macOS, the resulting binaries work best if `runConfigureICU` is run with `--enable-rpath`, so that the ICU4C dynamic libraries are discoverable by the built binary at their installed location.
