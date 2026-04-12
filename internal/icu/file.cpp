@@ -1,16 +1,9 @@
 // This code has been adapted from https://github.com/mysql/mysql-server/blob/ea7087d885006918ad54458e7aad215b1650312c/sql/regexp/regexp_engine.cc
 
-// #cgo macos CFLAGS: -Ibin/darwin-aarch64/include
-// #cgo macos CXXFLAGS: -Ibin/darwin-aarch64/include
-
 #include "unicode/regex.h"
 #include "cstring"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-void appendHead(URegularExpression* m_re, std::u16string& m_replace_buffer, int& m_replace_buffer_pos, UErrorCode* m_error_code, size_t size) {
+static void appendHead(URegularExpression* m_re, std::u16string& m_replace_buffer, int& m_replace_buffer_pos, UErrorCode* m_error_code, size_t size) {
 	if (size == 0) { return; }
 	int32_t text_length32 = 0;
 	auto text = uregex_getText(m_re, &text_length32, m_error_code);
@@ -20,14 +13,14 @@ void appendHead(URegularExpression* m_re, std::u16string& m_replace_buffer, int&
 	m_replace_buffer_pos = (int)size;
 }
 
-int tryToAppendReplacement(URegularExpression* m_re, std::u16string& m_replace_buffer, int& m_replace_buffer_pos, UErrorCode* m_error_code, UChar* replacement, int replacementLen) {
+static int tryToAppendReplacement(URegularExpression* m_re, std::u16string& m_replace_buffer, int& m_replace_buffer_pos, UErrorCode* m_error_code, UChar* replacement, int replacementLen) {
 	if (m_replace_buffer.empty()) { return 0; }
 	UChar* ptr = reinterpret_cast<UChar*>(&m_replace_buffer.at(0) + m_replace_buffer_pos);
 	int capacity = m_replace_buffer.size() - m_replace_buffer_pos;
 	return uregex_appendReplacement(m_re, replacement, replacementLen, &ptr, &capacity, m_error_code);
 }
 
-void appendReplacement(URegularExpression* m_re, std::u16string& m_replace_buffer, int& m_replace_buffer_pos, UErrorCode* m_error_code, UChar* replacement, int replacementLen) {
+static void appendReplacement(URegularExpression* m_re, std::u16string& m_replace_buffer, int& m_replace_buffer_pos, UErrorCode* m_error_code, UChar* replacement, int replacementLen) {
 	int replacement_size = tryToAppendReplacement(m_re, m_replace_buffer, m_replace_buffer_pos, m_error_code, replacement, replacementLen);
 	if (*m_error_code == U_BUFFER_OVERFLOW_ERROR) {
 		size_t required_buffer_size = m_replace_buffer_pos + replacement_size;
@@ -38,14 +31,14 @@ void appendReplacement(URegularExpression* m_re, std::u16string& m_replace_buffe
 	m_replace_buffer_pos += replacement_size;
 }
 
-int tryToAppendTail(URegularExpression* m_re, std::u16string& m_replace_buffer, int& m_replace_buffer_pos, UErrorCode* m_error_code) {
+static int tryToAppendTail(URegularExpression* m_re, std::u16string& m_replace_buffer, int& m_replace_buffer_pos, UErrorCode* m_error_code) {
 	if (m_replace_buffer.empty()) { return 0; }
 	UChar* ptr = reinterpret_cast<UChar*>(&m_replace_buffer.at(0) + m_replace_buffer_pos);
 	int capacity = m_replace_buffer.size() - m_replace_buffer_pos;
 	return uregex_appendTail(m_re, &ptr, &capacity, m_error_code);
 }
 
-void appendTail(URegularExpression* m_re, std::u16string& m_replace_buffer, int& m_replace_buffer_pos, UErrorCode* m_error_code) {
+static void appendTail(URegularExpression* m_re, std::u16string& m_replace_buffer, int& m_replace_buffer_pos, UErrorCode* m_error_code) {
 	int tail_size = tryToAppendTail(m_re, m_replace_buffer, m_replace_buffer_pos, m_error_code);
 	if (*m_error_code == U_BUFFER_OVERFLOW_ERROR) {
 		size_t required_buffer_size = m_replace_buffer_pos + tail_size;
@@ -55,6 +48,10 @@ void appendTail(URegularExpression* m_re, std::u16string& m_replace_buffer, int&
 	}
 	m_replace_buffer_pos += tail_size;
 }
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 UChar* replace(URegularExpression* regexp, UChar* replacement, int replacementLen, UChar* original, int originalSize, int start, int occurrence, int* returnSize) {
 	*returnSize = originalSize;
