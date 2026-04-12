@@ -1,4 +1,4 @@
-#include "unicode/regex.h"
+#include "unicode/uregex.h"
 
 #ifdef __cplusplus
 extern "C" {
