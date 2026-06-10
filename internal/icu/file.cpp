@@ -74,8 +74,8 @@ UChar* replace(URegularExpression* regexp, UChar* replacement, int replacementLe
 	}
 	appendTail(regexp, m_replace_buffer, m_replace_buffer_pos, &m_error_code);
 	m_replace_buffer.resize(m_replace_buffer_pos);
-	UChar* returnStr = static_cast<UChar*>(malloc(m_replace_buffer.size() * sizeof(UChar*)));
-	memcpy(returnStr, m_replace_buffer.data(), m_replace_buffer.size() * sizeof(UChar*));
+	UChar* returnStr = static_cast<UChar*>(malloc(m_replace_buffer.size() * sizeof(UChar)));
+	memcpy(returnStr, m_replace_buffer.data(), m_replace_buffer.size() * sizeof(UChar));
 	*returnSize = m_replace_buffer.size();
 	return returnStr;
 }
